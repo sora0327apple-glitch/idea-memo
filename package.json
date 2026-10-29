@@ -2,9 +2,10 @@
   "name": "idea-memo",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+ "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build:css": "tailwindcss -i ./app/globals.css -o ./app/output.css",
+    "build": "npm run build:css && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -18,6 +19,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
@@ -26,7 +28,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "postcss": "^8.5.32",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5"
   }
 }
