@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, IdeaMemo } from '@/lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus, Clock, Archive, Settings, Trash2, CheckCircle } from 'lucide-react';
+import { Plus, Clock, Archive, Settings, Trash2, CheckCircle, Share2, FolderInput } from 'lucide-react';
+import { motion, PanInfo } from 'framer-motion';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'feed' | 'history' | 'settings'>('feed');
@@ -31,7 +32,7 @@ export default function Home() {
   const stockMemos = useLiveQuery(() => db.memos.where('status').equals('stock').toArray()) || [];
   const completedMemos = useLiveQuery(() => db.memos.where('status').equals('completed').toArray()) || [];
 
-  // 自動削除チェック（タイマー切れのものを物理削除）
+  // 自動削除チェック
   useEffect(() => {
     const interval = setInterval(async () => {
       const now = new Date();
@@ -66,7 +67,7 @@ export default function Home() {
     setIsModalOpen(false);
   };
 
-  // 深掘り保存（Step 2 クリア条件）
+  // 深掘り保存（Step 2）
   const handleSaveDeepDive = async () => {
     if (!selectedMemo || !selectedMemo.id) return;
     
@@ -84,6 +85,24 @@ export default function Home() {
     setSelectedMemo(null);
   };
 
+  // 共有機能（Web Share API）
+  const handleShare = async (memo: IdeaMemo) => {
+    const shareText = `【${memo.title}】\n${memo.content || ''}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: memo.title,
+          text: shareText,
+        });
+      } catch (err) {
+        console.log('共有キャンセル', err);
+      }
+    } else {
+      await navigator.clipboard.writeText(shareText);
+      alert('クリップボードにコピーしました！');
+    }
+  };
+
   // 残り時間表示用ヘルパー
   const getRemainingTime = (expiresAt: Date) => {
     const diff = new Date(expiresAt).getTime() - new Date().getTime();
@@ -98,7 +117,7 @@ export default function Home() {
     <div className="w-full bg-slate-100 min-h-screen flex justify-center">
       <main className="w-full max-w-md min-h-screen bg-slate-50 flex flex-col justify-between pb-20 relative shadow-md">
         
-        {/* ヘッダー（幅・高さを一貫固定） */}
+        {/* ヘッダー */}
         <header className="p-4 bg-white border-b sticky top-0 z-10 flex justify-between items-center shadow-sm h-16 w-full">
           <h1 className="text-xl font-bold text-slate-800">Idea Seed</h1>
           <span className="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded-full font-medium">
@@ -107,7 +126,7 @@ export default function Home() {
         </header>
 
         {/* メインコンテンツエリア */}
-        <div className="p-4 flex-1 w-full">
+        <div className="p-4 flex-1 w-full overflow-x-hidden">
           {activeTab === 'feed' && (
             <div className="space-y-4">
               <h2 className="text-sm font-semibold text-slate-500 mb-2">深掘り待ち（消滅の危機）</h2>
@@ -115,9 +134,9 @@ export default function Home() {
                 <p className="text-center text-slate-400 py-10">右下の「＋」からアイデアの種を追加してください</p>
               ) : (
                 feedMemos.map((memo) => (
-                  <div
+                  <SwipeableCard
                     key={memo.id}
-                    onClick={() => {
+                    onCardClick={() => {
                       setSelectedMemo(memo);
                       setDeepDiveData({
                         why: memo.deepDiveFields.why || '',
@@ -127,15 +146,30 @@ export default function Home() {
                         others: memo.deepDiveFields.others || ''
                       });
                     }}
-                    className="bg-white p-4 rounded-xl border border-red-200 shadow-sm relative overflow-hidden cursor-pointer hover:border-red-400 transition"
+                    actions={[
+                      {
+                        label: '共有',
+                        icon: <Share2 className="w-5 h-5 text-white" />,
+                        bg: 'bg-blue-500',
+                        onClick: () => handleShare(memo)
+                      },
+                      {
+                        label: '削除',
+                        icon: <Trash2 className="w-5 h-5 text-white" />,
+                        bg: 'bg-red-500',
+                        onClick: async () => memo.id && await db.memos.delete(memo.id)
+                      }
+                    ]}
                   >
-                    <h3 className="font-bold text-slate-800">{memo.title}</h3>
-                    <p className="text-sm text-slate-600 line-clamp-2 mt-1">{memo.content}</p>
-                    <div className="mt-3 flex justify-end items-center text-red-500 text-sm font-mono font-bold">
-                      <Clock className="w-4 h-4 mr-1 animate-pulse" />
-                      あと {getRemainingTime(memo.expiresAt)}
+                    <div className="border border-red-200">
+                      <h3 className="font-bold text-slate-800">{memo.title}</h3>
+                      <p className="text-sm text-slate-600 line-clamp-2 mt-1">{memo.content}</p>
+                      <div className="mt-3 flex justify-end items-center text-red-500 text-sm font-mono font-bold">
+                        <Clock className="w-4 h-4 mr-1 animate-pulse" />
+                        あと {getRemainingTime(memo.expiresAt)}
+                      </div>
                     </div>
-                  </div>
+                  </SwipeableCard>
                 ))
               )}
             </div>
@@ -164,26 +198,57 @@ export default function Home() {
 
               <div className="space-y-3">
                 {(historySubTab === 'stock' ? stockMemos : completedMemos).map((memo) => (
-                  <div key={memo.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800">{memo.title}</h3>
-                    <p className="text-sm text-slate-600 mt-1">{memo.content}</p>
-                    {historySubTab === 'stock' && (
-                      <div className="mt-3 flex justify-end space-x-2 border-t pt-2">
-                        <button
-                          onClick={async () => memo.id && await db.memos.update(memo.id, { status: 'completed' })}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg flex items-center text-xs font-medium"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1" /> 完了
-                        </button>
-                        <button
-                          onClick={async () => memo.id && await db.memos.delete(memo.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center text-xs font-medium"
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" /> 削除
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <SwipeableCard
+                    key={memo.id}
+                    actions={
+                      historySubTab === 'stock'
+                        ? [
+                            {
+                              label: '共有',
+                              icon: <Share2 className="w-5 h-5 text-white" />,
+                              bg: 'bg-blue-500',
+                              onClick: () => handleShare(memo)
+                            },
+                            {
+                              label: '完了',
+                              icon: <CheckCircle className="w-5 h-5 text-white" />,
+                              bg: 'bg-green-500',
+                              onClick: async () => memo.id && await db.memos.update(memo.id, { status: 'completed' })
+                            },
+                            {
+                              label: '削除',
+                              icon: <Trash2 className="w-5 h-5 text-white" />,
+                              bg: 'bg-red-500',
+                              onClick: async () => memo.id && await db.memos.delete(memo.id)
+                            }
+                          ]
+                        : [
+                            {
+                              label: '共有',
+                              icon: <Share2 className="w-5 h-5 text-white" />,
+                              bg: 'bg-blue-500',
+                              onClick: () => handleShare(memo)
+                            },
+                            {
+                              label: 'ストック',
+                              icon: <FolderInput className="w-5 h-5 text-white" />,
+                              bg: 'bg-purple-500',
+                              onClick: async () => memo.id && await db.memos.update(memo.id, { status: 'stock' })
+                            },
+                            {
+                              label: '削除',
+                              icon: <Trash2 className="w-5 h-5 text-white" />,
+                              bg: 'bg-red-500',
+                              onClick: async () => memo.id && await db.memos.delete(memo.id)
+                            }
+                          ]
+                    }
+                  >
+                    <div className="border border-slate-200">
+                      <h3 className="font-bold text-slate-800">{memo.title}</h3>
+                      <p className="text-sm text-slate-600 mt-1">{memo.content}</p>
+                    </div>
+                  </SwipeableCard>
                 ))}
               </div>
             </div>
@@ -205,7 +270,7 @@ export default function Home() {
           <Plus className="w-6 h-6" />
         </button>
 
-        {/* Step 1: クイック作成 モーダル（中央配置） */}
+        {/* Step 1: クイック作成 モーダル */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-2xl">
@@ -254,7 +319,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Step 2: 深掘り モーダル（中央配置） */}
+        {/* Step 2: 深掘り モーダル */}
         {selectedMemo && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -305,22 +370,103 @@ export default function Home() {
           </div>
         )}
 
-        {/* 下部ナビゲーションバー（幅固定） */}
+        {/* 下部ナビゲーションバー */}
         <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t flex justify-around p-3 z-10 shadow-lg">
-          <button onClick={() => setActiveTab('feed')} className={`flex flex-col items-center ${activeTab === 'feed' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <Clock className="w-5 h-5" />
+          <button onClick={() => setActiveTab('feed')} className={`flex flex-col items-center relative ${activeTab === 'feed' ? 'text-blue-600' : 'text-slate-400'}`}>
+            <div className="relative">
+              <Clock className="w-5 h-5" />
+              {/* 深掘り件数の赤丸通知バッジ */}
+              {feedMemos.length > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[10px] font-bold px-1.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center leading-none shadow-sm">
+                  {feedMemos.length > 99 ? '99+' : feedMemos.length}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] mt-1 font-medium">深掘り</span>
           </button>
+          
           <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center ${activeTab === 'history' ? 'text-blue-600' : 'text-slate-400'}`}>
             <Archive className="w-5 h-5" />
             <span className="text-[10px] mt-1 font-medium">履歴</span>
           </button>
+          
           <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center ${activeTab === 'settings' ? 'text-blue-600' : 'text-slate-400'}`}>
             <Settings className="w-5 h-5" />
             <span className="text-[10px] mt-1 font-medium">設定</span>
           </button>
         </nav>
       </main>
+    </div>
+  );
+}
+
+// --- スワイプ可能なカードコンポーネント ---
+interface ActionItem {
+  label: string;
+  icon: React.ReactNode;
+  bg: string;
+  onClick: () => void;
+}
+
+function SwipeableCard({
+  children,
+  actions,
+  onCardClick,
+}: {
+  children: React.ReactNode;
+  actions: ActionItem[];
+  onCardClick?: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const actionWidth = actions.length * 64; // 各ボタン約64px幅
+
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    if (info.offset.x < -40) {
+      setIsOpen(true);
+    } else if (info.offset.x > 40) {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-xl bg-white shadow-sm my-2">
+      {/* 右側に隠れているアクションボタン領域 */}
+      <div className="absolute right-0 top-0 bottom-0 flex items-center justify-end z-0">
+        {actions.map((act, idx) => (
+          <button
+            key={idx}
+            onClick={(e) => {
+              e.stopPropagation();
+              act.onClick();
+              setIsOpen(false);
+            }}
+            className={`h-full w-16 flex flex-col items-center justify-center text-white ${act.bg} active:opacity-80 transition`}
+          >
+            {act.icon}
+            <span className="text-[10px] font-medium mt-1">{act.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* スライドする表のカード */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: -actionWidth, right: 0 }}
+        dragElastic={0.1}
+        onDragEnd={handleDragEnd}
+        animate={{ x: isOpen ? -actionWidth : 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        onClick={() => {
+          if (isOpen) {
+            setIsOpen(false);
+          } else if (onCardClick) {
+            onCardClick();
+          }
+        }}
+        className="bg-white p-4 rounded-xl relative z-10 cursor-pointer touch-pan-y"
+      >
+        {children}
+      </motion.div>
     </div>
   );
 }
